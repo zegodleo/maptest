@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import re
 from datetime import datetime, timedelta
+import time  # Import time module for real-time tracking
 
 # Function to tokenize names for matching
 def tokenize(name):
@@ -32,23 +33,47 @@ def match_salesperson_codes(operator_name, master_list, threshold=90):
 
 # Streamlit App
 def main():
+    start_time = time.time()  # Capture start time dynamically
+    progress_bar = st.progress(0)
+    time_remaining_text = st.empty()
+    status_text = st.empty()
+
+    # Layout for instructions on the right side
+    st.sidebar.title("📌 Instructions")
+    st.sidebar.write("1️⃣ Upload the **Vessel Data** Excel file (Sheet: report).")
+    st.sidebar.write("2️⃣ Upload the **Master List** Excel file (Sheet: master list).")
+    st.sidebar.write("3️⃣ Wait for the processing to complete.")
+    st.sidebar.write("4️⃣ Click the **Download Processed Data** button.")
+    st.sidebar.write("🔹 Ensure files are in the correct format before uploading.")
     st.title("🐐 Mapping Shortcut - LKA")
 
     # File upload for Vessel Data
     uploaded_vessel = st.file_uploader("Upload Vessel Data File (Excel)", type=["xlsx"])
-
-    # File upload for Master List
     uploaded_master = st.file_uploader("Upload Master List File (Excel)- Database only ", type=["xlsx"])
 
-    # Process data when files are uploaded
     if uploaded_vessel and uploaded_master:
         st.success("✅ Uploaded liao. wait pls...")
+        total_steps = 7  # Total processing steps
+        step = 0  # Track current step
+
+        def update_progress(step_desc):
+            nonlocal step
+            step += 1
+            elapsed_time = time.time() - start_time
+            avg_time_per_step = elapsed_time / step if step > 0 else 0
+            estimated_total_time = avg_time_per_step * total_steps
+            time_left = max(0, int(estimated_total_time - elapsed_time))
+            progress_bar.progress(int((step / total_steps) * 100))
+            time_remaining_text.text(f"⏳ {step_desc} | Estimated Time Left: {time_left} sec")
+            status_text.text(step_desc)
 
         # Load Vessel Data
         df = pd.read_excel(uploaded_vessel, sheet_name="report")
+        update_progress("Processing Vessel Data...")
 
         # Load Master List
         df_master_list = pd.read_excel(uploaded_master, sheet_name="master list", usecols=[0, 1], names=["Operator", "Salesperson Code"])
+        update_progress("Processing Master List...")
 
         # Convert to lowercase for case-insensitive matching
         df["Operator"] = df["Operator"].astype(str).str.lower()
@@ -61,6 +86,7 @@ def main():
             "Registered Owner", "Last Bunkering Start Date", "Last Bunkering Location"
         ]
         filtered_df = df[columns_needed].copy()
+        update_progress("Filtering Data...")
 
         # Convert date columns
         filtered_df["ETA"] = pd.to_datetime(filtered_df["ETA"])
@@ -83,12 +109,15 @@ def main():
             "Chemical/Products Tanker", "Chemical Tanker", "Bulk Carrier", "Aggregates Carrier"
         ]
         filtered_df = filtered_df[filtered_df["Vessel Type"].isin(vessel_types_to_keep)].reset_index(drop=True)
+        update_progress("Filtering Vessel Types...")
 
         # Apply matching function
         filtered_df["Salesperson Code"] = filtered_df["Operator"].apply(lambda x: match_salesperson_codes(x, df_master_list))
+        update_progress("Matching Salesperson Codes...")
 
         # Remove duplicate Operator names
         filtered_df = filtered_df.drop_duplicates(subset=["Operator"], keep="first")
+        update_progress("Finalizing Data...")
 
         # Save the processed data
         output_file = "Filtered_Vessel_Data.xlsx"
@@ -103,6 +132,9 @@ def main():
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
 
+        progress_bar.progress(100)
+        time_remaining_text.text("✅ Processing Completed!")
+        status_text.text("✅ Processing Complete! Ready for Download.")
         st.success("✅ ok liao! Download your file above.")
 
 if __name__ == "__main__":
